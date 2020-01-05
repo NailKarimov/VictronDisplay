@@ -1,0 +1,185 @@
+// include the library code
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(2, 3); // RX, TX
+LiquidCrystal_I2C lcd(0x27,16,2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+
+int CS1;
+float V2, I2, VPV2;
+const byte numChars = 30;
+char receivedChars[numChars];   // an array to store the received data
+boolean newData = false;
+const char * labelsOfInterest[] = {"V", "I", "VPV", "PPV", "CS"};
+const unsigned int maxLabelsOfInterest = sizeof(labelsOfInterest) / sizeof(*labelsOfInterest);
+boolean sleep1 = false;
+
+
+void setup() {
+  Serial.begin(19200);
+  mySerial.begin(19200); 
+  lcd.init(); //initialize the lcd
+  lcd.backlight(); //open the backlight
+  delay(1000);
+  lcd.setCursor(0,0);
+  lcd.print("INIT");
+  }
+  
+void loop() {
+  //lcd.setCursor(0,0);
+  //lcd.print("INIT");
+  recvWithEndMarker();
+  if (newData) { // we have received a ful line, deal with it
+ parseNewData(); // this messes up receivedChars[]
+newData = false;
+  }
+}
+void recvWithEndMarker() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+    while (mySerial.available() > 0 && newData == false) {
+    rc = mySerial.read();
+    if (rc != '\r') { // we ignore that character
+      if (rc != endMarker) {
+        if (rc == '\t') rc = ' '; // change tabs into just a space
+        receivedChars[ndx] = rc;
+        ndx++; // we go to the next space in our buffer
+        if (ndx >= numChars) { // and check bounds.
+          ndx = numChars - 1; // that means we will loose the end of long strings
+        }
+      } else {
+        receivedChars[ndx] = '\0'; // terminate the string
+        ndx = 0; // ndx is static, so we prepare for next turn
+        newData = true;
+      }
+    }
+  }
+}
+void parseNewData()
+{
+  const char *delim  = " ";
+  char * item;
+  boolean labelFound;
+  long int labelValue;
+  int labelIndex;
+item = strtok (receivedChars, delim);
+labelFound = false;
+  for (int i = 0; i < maxLabelsOfInterest; ++i) {
+    if (!strcmp(labelsOfInterest[i], item)) {
+     item = strtok(NULL, delim);
+      if (item != NULL) {
+        labelFound = true;
+        labelIndex = i;
+       labelValue = atol(item);
+break; // ends the for loop as we found a label
+      } // end if we had a value for the label
+  } // end string compare
+  } // end for
+  if (labelFound) {
+    switch (labelIndex) {
+      case 0:
+        lcd.setCursor(0,0);
+        V2 = labelValue / 1000.00f;
+        Serial.print("Battery Volate = ");
+        Serial.println(V2);
+        lcd.print("BV=");
+        lcd.print(V2);
+        break;
+      case 1:
+        I2 = labelValue / 1000.00f;
+        if (I2 < 0.05) {
+        lcd.setCursor(0,1);
+        lcd.print("     SLEEP      ");
+        Serial.println("Charger Sleeping ");
+        sleep1=true;
+        }
+        else {
+        Serial.print("Current Into Batts = ");
+        Serial.println(I2);
+        lcd.setCursor(0,1);
+        lcd.print("BC=");
+        lcd.print(I2);
+        lcd.print("  ");
+        sleep1=false;
+        }
+        break;
+      case 2:
+        VPV2 = labelValue / 1000.0f;
+        if (sleep1 == true) {
+        Serial.println("Panels Sleeping ");
+        }
+        else {
+        Serial.print("Panel Voltage = ");
+        Serial.println(VPV2);
+        lcd.setCursor(9,1);
+        lcd.print("PV=");
+        lcd.print(VPV2);
+        }
+        break;
+      case 3:
+        Serial.print("Panel Wattage = ");
+        Serial.println(labelValue);
+        lcd.setCursor(12,0);
+        lcd.print("   ");
+        lcd.setCursor(9,0);
+        lcd.print("PW=");
+        lcd.print(labelValue);
+        break;
+      case 4:
+        CS1=labelValue;
+                      switch (CS1) {
+                        case 0:
+                          Serial.println("Charger is OFF");
+                          lcd.setCursor(15,0);
+                          lcd.print(" ");
+                          CS1 = NULL;
+                          break;
+                        case 1:
+                          Serial.println("Charger is in low power mode");
+                          lcd.setCursor(15,0);
+                          lcd.print("S");
+                          CS1 = NULL;
+                          break;
+                        case 2:
+                          Serial.println("Charger has a fault");
+                          lcd.setCursor(15,0);
+                          lcd.print("E");
+                          CS1 = NULL;
+                          break;
+                        case 3:
+                          Serial.println("Charger is in BULK mode");
+                          lcd.setCursor(15,0);
+                          lcd.print("B");
+                          CS1 = NULL;
+                          break;
+                        case 4:
+                          Serial.println("Charger is in ABSORB mode");
+                          lcd.setCursor(15,0);
+                          lcd.print("A");
+                          CS1 = NULL;
+                          break;
+                        case 5:
+                          Serial.println("Charger is in FLOAT mode");
+                          lcd.setCursor(15,0);
+                          lcd.print("F");
+                          CS1 = NULL;
+                          break;
+                       case 9:
+                          Serial.println("Charger is in INVERT mode");
+                          lcd.setCursor(15,0);
+                          lcd.print("I");
+                          CS1 = NULL;
+                          break;
+                       }
+        Serial.print("Charger State = ");
+        Serial.println(labelValue);
+        Serial.print("\n");
+        delay(3000);
+       break;
+    }
+   } else {
+   }
+}
+
